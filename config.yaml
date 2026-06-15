@@ -1,0 +1,88 @@
+paths:
+  # This repository currently lives at SURF2026/src/rbf-network-benchmark.
+  # ../.. resolves to the SURF2026 workspace root, where data and output live.
+  workspace_root: ../..
+  data_dir: data
+  output_dir: output
+
+download:
+  datasets:
+    - iris
+    - wine
+    - breast_cancer
+    - fashion_mnist
+  fashion_mnist:
+    openml_name: Fashion-MNIST
+    version: 1
+
+experiment:
+  datasets:
+    - iris
+    - wine
+    - breast_cancer
+    - fashion_mnist
+  test_size: 0.25 # 25% test set, 75% training set
+  random_state: 42 
+  save_predictions: true
+  save_confusion_matrix: true
+  save_plots: true
+
+preprocess:
+  feature_extractor: raw
+  standardize: true
+  hog:
+    image_shape: [28, 28]
+    orientations: 9
+    pixels_per_cell: [4, 4]
+    cells_per_block: [2, 2]
+    block_norm: L2-Hys
+
+rbf:
+  center_init: kmeans
+  n_centers: 20
+  sigma: auto
+  sigma_scale: 1.0
+  epochs: 150
+  learning_rate: 0.05
+  l2_alpha: 0.001
+  kmeans_max_iter: 300
+
+dataset_overrides:
+  iris:
+    rbf:
+      n_centers: 12
+      sigma: auto
+      sigma_scale: 1.0
+      epochs: 150
+      learning_rate: 0.05
+      l2_alpha: 0.001
+
+  wine:
+    rbf:
+      n_centers: 30
+      sigma: auto
+      sigma_scale: 1.0
+      epochs: 200
+      learning_rate: 0.05
+      l2_alpha: 0.01
+
+  breast_cancer:
+    rbf:
+      n_centers: 40
+      sigma: auto
+      sigma_scale: 1.2
+      epochs: 200
+      learning_rate: 0.05
+      l2_alpha: 0.01
+
+  fashion_mnist:
+    preprocess:
+      feature_extractor: hog
+    rbf:
+      center_init: random
+      n_centers: 3000
+      sigma: auto
+      sigma_scale: 1.0
+      epochs: 150
+      learning_rate: 0.05
+      l2_alpha: 0.01
