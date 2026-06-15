@@ -29,7 +29,8 @@ SURF2026/
       requirements.txt
       src/
         download_datasets.py    # downloads datasets into SURF2026/data
-        train_evaluate.py       # trains and evaluates the RBF network
+        train_evaluate.py       # CPU training and evaluation entry
+        train_evaluate_gpu.py   # PyTorch device training and evaluation entry
 ```
 
 This keeps datasets and generated results out of the code repository.
@@ -58,6 +59,19 @@ input features -> Gaussian RBF hidden layer -> softmax output layer
 
 RBF centers are selected by either KMeans or random training samples. By default, the output layer is trained with softmax gradient descent, which records loss and accuracy values for each epoch. The training loop uses `tqdm` to show per-dataset progress.
 
+## Dataset Dimensions
+
+The symbolic dimensions below describe the network shape for each dataset. Concrete `n_centers_*` values are configured in `config.yaml`.
+
+| Dataset | Input Dimension | RBF Hidden Dimension | Softmax Input Dimension | Softmax Output Dimension |
+|---|---:|---:|---:|---:|
+| Iris | 4 | `n_centers_iris` | `n_centers_iris + 1` | 3 |
+| Wine | 13 | `n_centers_wine` | `n_centers_wine + 1` | 3 |
+| Breast Cancer Wisconsin | 30 | `n_centers_breast_cancer` | `n_centers_breast_cancer + 1` | 2 |
+| Fashion-MNIST | 200 after PCA, from 784 raw pixels | `n_centers_fashion_mnist` | `n_centers_fashion_mnist + 1` | 10 |
+
+The `+ 1` term is the bias column appended before the softmax output layer.
+
 ## Setup With venv
 
 From the repository root:
@@ -77,7 +91,8 @@ Important sections:
 - `paths`: controls workspace, data, and output directories.
 - `download.datasets`: controls which datasets are downloaded.
 - `experiment.datasets`: controls which datasets are trained and tested.
-- `preprocess`: controls feature extraction and standardization.
+- `experiment.standardize`: controls train-set-fitted feature standardization.
+- `gpu`: controls the PyTorch device, mini-batch size, and curve logging interval for `train_evaluate_gpu.py`.
 - `rbf`: controls the default RBF network parameters.
 - `dataset_overrides`: controls per-dataset parameter overrides.
 
@@ -92,10 +107,12 @@ dataset_overrides:
       l2_alpha: 0.001
   fashion_mnist:
     rbf:
-      epochs: 150
-      learning_rate: 0.05
-      l2_alpha: 0.01
+      epochs: 800
+      learning_rate: 0.01
+      l2_alpha: 0.00001
 ```
+
+Fashion-MNIST uses a smaller learning rate because its RBF feature layer is much wider than the tabular datasets.
 
 The default path setup is:
 
@@ -141,6 +158,24 @@ Train and evaluate one dataset:
 python src\train_evaluate.py --dataset iris
 ```
 
+GPU/PyTorch entry:
+
+```powershell
+python src\train_evaluate_gpu.py --dataset fashion_mnist
+```
+
+`train_evaluate_gpu.py` keeps the same RBF network definition and output files, but computes Gaussian RBF features and softmax gradient descent with PyTorch. If `gpu.device` is `auto`, it uses CUDA when `torch.cuda.is_available()` is true and otherwise falls back to CPU.
+
+```yaml
+gpu:
+  device: auto
+  batch_size: 2048
+  eval_batch_size: 4096
+  history_interval: 1
+```
+
+Feature preparation, PCA, and KMeans center selection still use scikit-learn on CPU. For faster Fashion-MNIST runs, the current config uses random training samples as RBF centers.
+
 Outputs are written to:
 
 ```text
@@ -166,13 +201,19 @@ The full run also gets:
 
 ## Notes on Fashion-MNIST
 
-Fashion-MNIST is image data, so the default config uses HOG features before the RBF layer. This keeps edge and shape information that raw pixel distances often miss:
+Fashion-MNIST uses a dataset-specific image pipeline before the RBF layer:
 
-```yaml
-dataset_overrides:
-  fashion_mnist:
-    preprocess:
-      feature_extractor: hog
+```text
+raw Fashion-MNIST image
+-> float32
+-> divide by 255
+-> flatten to 784 dimensions
+-> stratified train/test split
+-> StandardScaler fitted on the training set
+-> PCA to 200 dimensions
+-> RBF centers selected by config, currently random samples for Fashion-MNIST
+-> Gaussian RBF features
+-> softmax gradient descent classifier
 ```
 
-This keeps the classifier as an RBF network while giving it image-oriented input features.
+The PCA dimension is controlled by `experiment.fashion_mnist_pipeline.pca_components` in `config.yaml`.

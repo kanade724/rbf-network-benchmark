@@ -1,6 +1,6 @@
-numpy>=1.26
+numpy>=1.26,<2.0
 scikit-learn>=1.4
 PyYAML>=6.0
 matplotlib>=3.7
 tqdm>=4.66
-scikit-image>=0.23
+torch>=2.3,<2.6

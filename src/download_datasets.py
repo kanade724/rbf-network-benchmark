@@ -76,7 +76,7 @@ def download_fashion_mnist(config: dict[str, Any], data_dir: Path) -> Path:
         data_home=cache_dir,
     )
 
-    x = dataset.data.astype(np.float64) / 255.0
+    x = dataset.data.astype(np.float64)
     y = LabelEncoder().fit_transform(dataset.target)
     target_names = [str(i) for i in range(10)]
     feature_names = [f"pixel_{i}" for i in range(x.shape[1])]

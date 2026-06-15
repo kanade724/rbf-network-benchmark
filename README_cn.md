@@ -29,7 +29,8 @@ SURF2026/
       requirements.txt
       src/
         download_datasets.py    # 将数据集下载到 SURF2026/data
-        train_evaluate.py       # 训练和评估 RBF 网络
+        train_evaluate.py       # CPU 训练和评估入口
+        train_evaluate_gpu.py   # PyTorch 设备训练和评估入口
 ```
 
 这样可以避免数据集和生成结果污染代码仓库。
@@ -58,6 +59,19 @@ hidden = np.exp(-squared_distances / (2.0 * self.sigma_**2))
 
 RBF 中心可以通过 KMeans 或随机训练样本选择。默认情况下，输出层使用 softmax 梯度下降训练，并记录每个 epoch 的 loss 和 accuracy。训练循环使用 `tqdm` 显示每个数据集的训练进度。
 
+## 数据集维度
+
+下表使用符号表示每个数据集在当前网络中的结构维度。具体的 `n_centers_*` 数值以 `config.yaml` 中的配置为准。
+
+| 数据集 | 输入维度 | RBF hidden 维度 | softmax 输入维度 | softmax 输出维度 |
+|---|---:|---:|---:|---:|
+| Iris | 4 | `n_centers_iris` | `n_centers_iris + 1` | 3 |
+| Wine | 13 | `n_centers_wine` | `n_centers_wine + 1` | 3 |
+| Breast Cancer Wisconsin | 30 | `n_centers_breast_cancer` | `n_centers_breast_cancer + 1` | 2 |
+| Fashion-MNIST | 原始 784 维像素经 PCA 后为 200 维 | `n_centers_fashion_mnist` | `n_centers_fashion_mnist + 1` | 10 |
+
+其中 `+ 1` 是进入 softmax 输出层前拼接的 bias 列。
+
 ## 使用 venv 配置环境
 
 在仓库根目录运行：
@@ -77,7 +91,8 @@ pip install -r requirements.txt
 - `paths`：控制工作空间、数据目录和输出目录。
 - `download.datasets`：控制需要下载哪些数据集。
 - `experiment.datasets`：控制需要训练和测试哪些数据集。
-- `preprocess`：控制特征提取和标准化。
+- `experiment.standardize`：控制是否使用只在训练集上拟合的特征标准化。
+- `gpu`：控制 `train_evaluate_gpu.py` 使用的 PyTorch 设备、mini-batch 大小和曲线记录间隔。
 - `rbf`：控制默认 RBF 网络参数。
 - `dataset_overrides`：控制每个数据集的专属参数。
 
@@ -92,10 +107,12 @@ dataset_overrides:
       l2_alpha: 0.001
   fashion_mnist:
     rbf:
-      epochs: 150
-      learning_rate: 0.05
-      l2_alpha: 0.01
+      epochs: 800
+      learning_rate: 0.01
+      l2_alpha: 0.00001
 ```
+
+Fashion-MNIST 的 RBF 特征层比表格数据集宽很多，因此使用更小的学习率。
 
 默认路径配置是：
 
@@ -141,6 +158,24 @@ python src\train_evaluate.py
 python src\train_evaluate.py --dataset iris
 ```
 
+GPU/PyTorch 入口：
+
+```powershell
+python src\train_evaluate_gpu.py --dataset fashion_mnist
+```
+
+`train_evaluate_gpu.py` 保留相同的 RBF 网络定义和输出文件格式，但使用 PyTorch 计算 Gaussian RBF 特征和 softmax 梯度下降。如果 `gpu.device` 设置为 `auto`，当 `torch.cuda.is_available()` 为 true 时会使用 CUDA，否则自动回退到 CPU。
+
+```yaml
+gpu:
+  device: auto
+  batch_size: 2048
+  eval_batch_size: 4096
+  history_interval: 1
+```
+
+特征准备、PCA 和 KMeans 中心选择仍然使用 scikit-learn 在 CPU 上完成。为了让 Fashion-MNIST 训练更快，当前配置使用随机训练样本作为 RBF centers。
+
 输出会写入：
 
 ```text
@@ -166,13 +201,19 @@ SURF2026/output/rbf_YYYYMMDD_HHMMSS/
 
 ## Fashion-MNIST 说明
 
-Fashion-MNIST 是图像数据，因此默认配置会在 RBF 层前使用 HOG 特征。HOG 能保留边缘和形状信息，比直接使用原始像素距离更适合图像任务：
+Fashion-MNIST 在进入 RBF 层前使用专门的图像处理管线：
 
-```yaml
-dataset_overrides:
-  fashion_mnist:
-    preprocess:
-      feature_extractor: hog
+```text
+原始 Fashion-MNIST 图片
+-> 转 float32
+-> 除以 255，归一化到 0~1
+-> reshape 成 784 维向量
+-> stratified train/test split
+-> StandardScaler 标准化，并且只在训练集上拟合
+-> PCA 降到 200 维
+-> 按照 config 选择 RBF centers，当前 Fashion-MNIST 使用随机训练样本
+-> Gaussian RBF 升维
+-> softmax 梯度下降分类
 ```
 
-这样分类器主体仍然是 RBF 网络，但输入特征更适合图像任务。
+PCA 维度由 `config.yaml` 中的 `experiment.fashion_mnist_pipeline.pca_components` 控制。

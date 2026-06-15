@@ -23,19 +23,19 @@ experiment:
     - fashion_mnist
   test_size: 0.25 # 25% test set, 75% training set
   random_state: 42 
+  standardize: true
+  fashion_mnist_pipeline:
+    normalize_pixels: true
+    pca_components: 200
   save_predictions: true
   save_confusion_matrix: true
   save_plots: true
 
-preprocess:
-  feature_extractor: raw
-  standardize: true
-  hog:
-    image_shape: [28, 28]
-    orientations: 9
-    pixels_per_cell: [4, 4]
-    cells_per_block: [2, 2]
-    block_norm: L2-Hys
+gpu:
+  device: auto
+  batch_size: 2048
+  eval_batch_size: 4096
+  history_interval: 1
 
 rbf:
   center_init: kmeans
@@ -50,7 +50,7 @@ rbf:
 dataset_overrides:
   iris:
     rbf:
-      n_centers: 12
+      n_centers: 12 #特征维度 输出维度
       sigma: auto
       sigma_scale: 1.0
       epochs: 150
@@ -76,13 +76,11 @@ dataset_overrides:
       l2_alpha: 0.01
 
   fashion_mnist:
-    preprocess:
-      feature_extractor: hog
     rbf:
       center_init: random
-      n_centers: 3000
+      n_centers: 6000
       sigma: auto
-      sigma_scale: 1.0
-      epochs: 150
-      learning_rate: 0.05
-      l2_alpha: 0.01
+      sigma_scale: 0.35
+      epochs: 400
+      learning_rate: 0.02
+      l2_alpha: 0.00001

@@ -16,7 +16,10 @@ os.environ.setdefault("MPLCONFIGDIR", str(default_matplotlib_dir))
 
 import matplotlib
 import numpy as np
+import torch
+import torch.nn.functional as F
 import yaml
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
@@ -28,7 +31,7 @@ from tqdm import tqdm
 
 
 @dataclass
-class RBFNetwork:
+class TorchRBFNetwork:
     n_centers: int
     center_init: str
     sigma: str | float
@@ -38,6 +41,10 @@ class RBFNetwork:
     l2_alpha: float
     random_state: int
     kmeans_max_iter: int
+    device: torch.device
+    batch_size: int
+    eval_batch_size: int
+    history_interval: int
 
     def fit(
         self,
@@ -46,98 +53,83 @@ class RBFNetwork:
         x_eval: np.ndarray | None = None,
         y_eval: np.ndarray | None = None,
         progress_label: str = "training",
-    ) -> "RBFNetwork":
+    ) -> "TorchRBFNetwork":
         if self.n_centers <= 0:
             raise ValueError("rbf.n_centers must be positive.")
         if self.n_centers > len(x):
             raise ValueError("rbf.n_centers cannot exceed the number of training samples.")
-
-        self.classes_ = np.unique(y)
-        self.centers_ = self._select_centers(x)
-        self.sigma_ = self._resolve_sigma(self.centers_)
-
-        phi = self._gaussian_rbf_features(x)
-        phi_eval = self._gaussian_rbf_features(x_eval) if x_eval is not None else None
-        self.history_ = self._fit_softmax_gd(phi, y, phi_eval, y_eval, progress_label)
-        return self
-
-    def predict(self, x: np.ndarray) -> np.ndarray:
-        scores = self._gaussian_rbf_features(x) @ self.weights_
-        return self.classes_[np.argmax(scores, axis=1)]
-
-    def _fit_softmax_gd(
-        self,
-        phi: np.ndarray,
-        y: np.ndarray,
-        phi_eval: np.ndarray | None,
-        y_eval: np.ndarray | None,
-        progress_label: str,
-    ) -> list[dict[str, float]]:
         if self.epochs <= 0:
             raise ValueError("rbf.epochs must be positive.")
         if self.learning_rate <= 0:
             raise ValueError("rbf.learning_rate must be positive.")
 
-        rng = np.random.default_rng(self.random_state)
-        y_index = np.searchsorted(self.classes_, y)
-        y_one_hot = np.eye(len(self.classes_))[y_index]
-        self.weights_ = rng.normal(loc=0.0, scale=0.01, size=(phi.shape[1], len(self.classes_)))
+        torch.manual_seed(self.random_state)
+        if self.device.type == "cuda":
+            torch.cuda.manual_seed_all(self.random_state)
 
-        history = [self._history_row(0, phi, y, phi_eval, y_eval)]
+        self.classes_ = np.unique(y)
+        centers = self._select_centers(x)
+        self.sigma_ = self._resolve_sigma(centers)
+        self.centers_ = torch.as_tensor(centers, dtype=torch.float32, device=self.device)
+
+        n_classes = len(self.classes_)
+        self.weights_ = torch.empty(self.n_centers + 1, n_classes, dtype=torch.float32, device=self.device)
+        torch.nn.init.normal_(self.weights_, mean=0.0, std=0.01)
+        self.weights_.requires_grad_(True)
+        optimizer = torch.optim.SGD([self.weights_], lr=self.learning_rate)
+
+        x_train_t = torch.as_tensor(x, dtype=torch.float32, device=self.device)
+        y_train_t = torch.as_tensor(np.searchsorted(self.classes_, y), dtype=torch.long, device=self.device)
+        x_eval_t = torch.as_tensor(x_eval, dtype=torch.float32, device=self.device) if x_eval is not None else None
+        y_eval_t = (
+            torch.as_tensor(np.searchsorted(self.classes_, y_eval), dtype=torch.long, device=self.device)
+            if y_eval is not None
+            else None
+        )
+
+        self.history_ = [self._history_row(0, x_train_t, y_train_t, x_eval_t, y_eval_t)]
         progress = tqdm(
             range(1, self.epochs + 1),
-            desc=progress_label,
+            desc=f"{progress_label} ({self.device})",
             unit="epoch",
             mininterval=0.5,
             leave=False,
             disable=not sys.stderr.isatty(),
         )
+        generator = torch.Generator(device=self.device)
+        generator.manual_seed(self.random_state)
+
         for epoch in progress:
-            probabilities = softmax(phi @ self.weights_)
-            gradient = phi.T @ (probabilities - y_one_hot) / len(phi)
-            regularized_weights = self.weights_.copy()
-            regularized_weights[0] = 0.0
-            gradient += self.l2_alpha * regularized_weights
-            self.weights_ -= self.learning_rate * gradient
+            permutation = torch.randperm(len(x_train_t), generator=generator, device=self.device)
+            for start in range(0, len(x_train_t), self.batch_size):
+                indices = permutation[start : start + self.batch_size]
+                phi = self._gaussian_rbf_features(x_train_t[indices])
+                logits = phi @ self.weights_
+                loss = F.cross_entropy(logits, y_train_t[indices])
+                loss = loss + 0.5 * self.l2_alpha * torch.sum(self.weights_[1:] * self.weights_[1:])
 
-            row = self._history_row(epoch, phi, y, phi_eval, y_eval)
-            history.append(row)
-            progress.set_postfix(
-                train_loss=f"{row['train_loss']:.4f}",
-                train_acc=f"{row['train_accuracy']:.4f}",
-            )
-        return history
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
 
-    def _history_row(
-        self,
-        epoch: int,
-        phi_train: np.ndarray,
-        y_train: np.ndarray,
-        phi_eval: np.ndarray | None,
-        y_eval: np.ndarray | None,
-    ) -> dict[str, float]:
-        row = {
-            "epoch": float(epoch),
-            "train_loss": self._cross_entropy_loss(phi_train, y_train),
-            "train_accuracy": self._accuracy_from_features(phi_train, y_train),
-        }
-        if phi_eval is not None and y_eval is not None:
-            row["test_loss"] = self._cross_entropy_loss(phi_eval, y_eval)
-            row["test_accuracy"] = self._accuracy_from_features(phi_eval, y_eval)
-        return row
+            if epoch % self.history_interval == 0 or epoch == self.epochs:
+                row = self._history_row(epoch, x_train_t, y_train_t, x_eval_t, y_eval_t)
+                self.history_.append(row)
+                progress.set_postfix(
+                    train_loss=f"{row['train_loss']:.4f}",
+                    train_acc=f"{row['train_accuracy']:.4f}",
+                )
 
-    def _cross_entropy_loss(self, phi: np.ndarray, y: np.ndarray) -> float:
-        y_index = np.searchsorted(self.classes_, y)
-        probabilities = softmax(phi @ self.weights_)
-        negative_log_likelihood = -np.log(probabilities[np.arange(len(y)), y_index] + 1e-12).mean()
-        regularized_weights = self.weights_.copy()
-        regularized_weights[0] = 0.0
-        penalty = 0.5 * self.l2_alpha * np.sum(regularized_weights * regularized_weights)
-        return float(negative_log_likelihood + penalty)
+        return self
 
-    def _accuracy_from_features(self, phi: np.ndarray, y: np.ndarray) -> float:
-        predictions = self.classes_[np.argmax(phi @ self.weights_, axis=1)]
-        return float(np.mean(predictions == y))
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        x_t = torch.as_tensor(x, dtype=torch.float32, device=self.device)
+        predictions = []
+        with torch.no_grad():
+            for start in range(0, len(x_t), self.eval_batch_size):
+                phi = self._gaussian_rbf_features(x_t[start : start + self.eval_batch_size])
+                predictions.append(torch.argmax(phi @ self.weights_, dim=1).cpu().numpy())
+        return self.classes_[np.concatenate(predictions)]
 
     def _select_centers(self, x: np.ndarray) -> np.ndarray:
         if self.center_init == "kmeans":
@@ -148,12 +140,12 @@ class RBFNetwork:
                 random_state=self.random_state,
             )
             model.fit(x)
-            return model.cluster_centers_
+            return model.cluster_centers_.astype(np.float32)
 
         if self.center_init == "random":
             rng = np.random.default_rng(self.random_state)
             indices = rng.choice(len(x), size=self.n_centers, replace=False)
-            return x[indices]
+            return x[indices].astype(np.float32)
 
         raise ValueError("rbf.center_init must be 'kmeans' or 'random'.")
 
@@ -166,30 +158,62 @@ class RBFNetwork:
         if self.sigma != "auto":
             raise ValueError("rbf.sigma must be 'auto' or a positive number.")
 
-        squared = pairwise_squared_distances(centers, centers)
+        squared = pairwise_squared_distances_np(centers, centers)
         distances = np.sqrt(squared[np.triu_indices_from(squared, k=1)])
         distances = distances[distances > 0]
         if len(distances) == 0:
             return 1.0
         return float(np.median(distances) * self.sigma_scale)
 
-    def _gaussian_rbf_features(self, x: np.ndarray) -> np.ndarray:
-        squared_distances = pairwise_squared_distances(x, self.centers_)
-        # Classic Gaussian RBF: exp(-||x - c||^2 / (2 * sigma^2)).
-        hidden = np.exp(-squared_distances / (2.0 * self.sigma_**2))
-        return np.c_[np.ones(len(x)), hidden]
+    def _gaussian_rbf_features(self, x: torch.Tensor) -> torch.Tensor:
+        squared_distances = torch.cdist(x, self.centers_).pow(2)
+        hidden = torch.exp(-squared_distances / (2.0 * self.sigma_**2))
+        return torch.cat([torch.ones((len(x), 1), dtype=torch.float32, device=self.device), hidden], dim=1)
+
+    def _history_row(
+        self,
+        epoch: int,
+        x_train: torch.Tensor,
+        y_train: torch.Tensor,
+        x_eval: torch.Tensor | None,
+        y_eval: torch.Tensor | None,
+    ) -> dict[str, float]:
+        train_loss, train_accuracy = self._evaluate_tensor_split(x_train, y_train)
+        row = {
+            "epoch": float(epoch),
+            "train_loss": train_loss,
+            "train_accuracy": train_accuracy,
+        }
+        if x_eval is not None and y_eval is not None:
+            test_loss, test_accuracy = self._evaluate_tensor_split(x_eval, y_eval)
+            row["test_loss"] = test_loss
+            row["test_accuracy"] = test_accuracy
+        return row
+
+    def _evaluate_tensor_split(self, x: torch.Tensor, y: torch.Tensor) -> tuple[float, float]:
+        total_loss = 0.0
+        total_correct = 0
+        total = 0
+        with torch.no_grad():
+            for start in range(0, len(x), self.eval_batch_size):
+                x_batch = x[start : start + self.eval_batch_size]
+                y_batch = y[start : start + self.eval_batch_size]
+                phi = self._gaussian_rbf_features(x_batch)
+                logits = phi @ self.weights_
+                total_loss += F.cross_entropy(logits, y_batch, reduction="sum").item()
+                total_correct += (torch.argmax(logits, dim=1) == y_batch).sum().item()
+                total += len(y_batch)
+
+            penalty = 0.5 * self.l2_alpha * torch.sum(self.weights_[1:] * self.weights_[1:]).item()
+        return float(total_loss / total + penalty), float(total_correct / total)
 
 
-def pairwise_squared_distances(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def pairwise_squared_distances_np(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    a = a.astype(np.float32, copy=False)
+    b = b.astype(np.float32, copy=False)
     a_norm = np.sum(a * a, axis=1, keepdims=True)
     b_norm = np.sum(b * b, axis=1, keepdims=True).T
     return np.maximum(a_norm + b_norm - 2.0 * a @ b.T, 0.0)
-
-
-def softmax(logits: np.ndarray) -> np.ndarray:
-    shifted = logits - np.max(logits, axis=1, keepdims=True)
-    exp_values = np.exp(shifted)
-    return exp_values / np.sum(exp_values, axis=1, keepdims=True)
 
 
 def read_config(config_path: Path) -> dict[str, Any]:
@@ -234,31 +258,16 @@ def load_saved_dataset(data_dir: Path, dataset: str) -> tuple[np.ndarray, np.nda
     return data["x"], data["y"], data["target_names"].astype(str).tolist()
 
 
-def make_model(config: dict[str, Any]) -> RBFNetwork:
-    rbf = config["rbf"]
-    return RBFNetwork(
-        n_centers=int(rbf["n_centers"]),
-        center_init=rbf.get("center_init", "kmeans"),
-        sigma=rbf.get("sigma", "auto"),
-        sigma_scale=float(rbf.get("sigma_scale", 1.0)),
-        epochs=int(rbf.get("epochs", 100)),
-        learning_rate=float(rbf.get("learning_rate", 0.05)),
-        l2_alpha=float(rbf.get("l2_alpha", 1e-3)),
-        random_state=int(config["experiment"].get("random_state", 42)),
-        kmeans_max_iter=int(rbf.get("kmeans_max_iter", 300)),
-    )
-
-
 def standardize_split(
     x_train: np.ndarray,
     x_test: np.ndarray,
     enabled: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     if not enabled:
-        return x_train, x_test
+        return x_train.astype(np.float32), x_test.astype(np.float32)
 
     scaler = StandardScaler()
-    return scaler.fit_transform(x_train), scaler.transform(x_test)
+    return scaler.fit_transform(x_train).astype(np.float32), scaler.transform(x_test).astype(np.float32)
 
 
 def prepare_fashion_mnist_features(
@@ -284,14 +293,43 @@ def prepare_fashion_mnist_features(
             n_components=int(pca_components),
             random_state=config["experiment"].get("random_state", 42),
         )
-        x_train = pca.fit_transform(x_train)
-        x_test = pca.transform(x_test)
+        x_train = pca.fit_transform(x_train).astype(np.float32)
+        x_test = pca.transform(x_test).astype(np.float32)
 
     return x_train, x_test, {
         "normalize_pixels": normalize_pixels,
         "standardize": True,
         "pca_components": pca_components,
     }
+
+
+def make_model(config: dict[str, Any], device: torch.device) -> TorchRBFNetwork:
+    rbf = config["rbf"]
+    gpu = config.get("gpu", {})
+    return TorchRBFNetwork(
+        n_centers=int(rbf["n_centers"]),
+        center_init=rbf.get("center_init", "kmeans"),
+        sigma=rbf.get("sigma", "auto"),
+        sigma_scale=float(rbf.get("sigma_scale", 1.0)),
+        epochs=int(rbf.get("epochs", 100)),
+        learning_rate=float(rbf.get("learning_rate", 0.05)),
+        l2_alpha=float(rbf.get("l2_alpha", 1e-3)),
+        random_state=int(config["experiment"].get("random_state", 42)),
+        kmeans_max_iter=int(rbf.get("kmeans_max_iter", 300)),
+        device=device,
+        batch_size=int(gpu.get("batch_size", 2048)),
+        eval_batch_size=int(gpu.get("eval_batch_size", 4096)),
+        history_interval=int(gpu.get("history_interval", 1)),
+    )
+
+
+def resolve_device(config: dict[str, Any]) -> torch.device:
+    requested = str(config.get("gpu", {}).get("device", "auto")).lower()
+    if requested == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if requested == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("gpu.device is 'cuda', but torch.cuda.is_available() is false.")
+    return torch.device(requested)
 
 
 def write_json(path: Path, content: dict[str, Any]) -> None:
@@ -382,7 +420,7 @@ def plot_confusion_matrix(path: Path, matrix: np.ndarray, target_names: list[str
     plt.close()
 
 
-def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dict[str, Any]:
+def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path, device: torch.device) -> dict[str, Any]:
     config = dataset_config(config, dataset)
     data_dir = resolve_workspace_path(config, "data_dir")
     x, y, target_names = load_saved_dataset(data_dir, dataset)
@@ -407,7 +445,7 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
             "pca_components": None,
         }
 
-    model = make_model(config)
+    model = make_model(config, device)
     model.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, progress_label=dataset)
     y_pred = model.predict(x_test)
     y_train_pred = model.predict(x_train)
@@ -418,6 +456,7 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
     labels = np.arange(len(target_names))
     metrics = {
         "dataset": dataset,
+        "device": str(model.device),
         "samples": int(len(x)),
         "train_samples": int(len(x_train)),
         "test_samples": int(len(x_test)),
@@ -428,7 +467,8 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
             "n_centers": int(model.n_centers),
             "center_init": model.center_init,
             "output_layer": "softmax",
-            "optimizer": "gradient_descent",
+            "optimizer": "mini_batch_gradient_descent",
+            "batch_size": int(model.batch_size),
             "epochs": int(model.epochs),
             "learning_rate": float(model.learning_rate),
             "sigma": float(model.sigma_),
@@ -472,7 +512,7 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train and evaluate Gaussian RBF networks.")
+    parser = argparse.ArgumentParser(description="Train and evaluate Gaussian RBF networks with PyTorch.")
     parser.add_argument("--config", type=Path, default=project_root() / "config.yaml")
     parser.add_argument("--dataset", choices=["iris", "wine", "breast_cancer", "fashion_mnist"])
     return parser.parse_args()
@@ -481,16 +521,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = read_config(args.config)
+    device = resolve_device(config)
     output_dir = resolve_workspace_path(config, "output_dir")
-    run_dir = output_dir / datetime.now().strftime("rbf_%Y%m%d_%H%M%S_%f")
+    run_dir = output_dir / datetime.now().strftime("rbf_gpu_%Y%m%d_%H%M%S_%f")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     datasets = [args.dataset] if args.dataset else config.get("experiment", {}).get("datasets", [])
     if not datasets:
         raise ValueError("No datasets selected. Set experiment.datasets in config.yaml or pass --dataset.")
 
-    summary = [evaluate_dataset(config, dataset, run_dir) for dataset in datasets]
-    write_json(run_dir / "summary.json", {"results": summary})
+    print(f"device: {device}")
+    summary = [evaluate_dataset(config, dataset, run_dir, device) for dataset in datasets]
+    write_json(run_dir / "summary.json", {"device": str(device), "results": summary})
 
     for item in summary:
         print(f"{item['dataset']:15s} accuracy={item['accuracy']:.4f} macro_f1={item['macro_f1']:.4f}")
