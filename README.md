@@ -220,16 +220,39 @@ The latest full run was saved under `SURF2026/output/rbf_20260616_132819_188901/
 
 These results correspond to the current configuration in `config.yaml`, including the dataset-specific RBF settings and the Fashion-MNIST PCA pipeline.
 
-## Digit Dataset Run
+## Digit Dataset Runs
 
-The two digit datasets requested later were trained with the standard tabular path only: stratified split, train-set-fitted standardization, then direct RBF features. No PCA was used.
+The digit datasets were trained with the standard tabular path only: stratified split, train-set-fitted standardization, then direct RBF features. No PCA was used.
 
-| Dataset | Train Accuracy | Test Accuracy | Train Macro F1 | Test Macro F1 |
-|---|---:|---:|---:|---:|
-| Optical Recognition of Handwritten Digits | 0.4363 | 0.4228 | 0.3704 | 0.3476 |
-| Pen-Based Digits | 0.5446 | 0.5360 | 0.4224 | 0.4132 |
+The final two tuning runs are listed below in execution order: first `optdigits`, then `pendigits`.
 
-Outputs for this run were written to `SURF2026/output/rbf_20260616_142139_183542/` and `SURF2026/output/rbf_20260616_142149_344234/`.
+### Run History
+
+| Time | Dataset | n_centers | Epochs | Learning Rate | Test Accuracy | Test Macro F1 |
+|---|---|---:|---:|---:|---:|---:|
+| 2026-06-16 14:21 | Optical Recognition of Handwritten Digits | 20 | 150 | 0.05 | 0.4228 | 0.3476 |
+| 2026-06-16 14:21 | Pen-Based Digits | 20 | 150 | 0.05 | 0.5360 | 0.4132 |
+| 2026-06-16 14:39 | Optical Recognition of Handwritten Digits | 80 | 300 | 0.02 | 0.6698 | 0.6503 |
+| 2026-06-16 14:40 | Pen-Based Digits | 120 | 300 | 0.02 | 0.6641 | 0.6117 |
+
+### What Changed
+
+The improvements came from three main adjustments:
+
+- increase `rbf.n_centers` to give the RBF layer more capacity
+- raise `rbf.epochs` so the softmax layer can converge longer
+- lower `rbf.learning_rate` to make optimization more stable
+
+### Final Run Order
+
+| Order | Time | Dataset | n_centers | Epochs | Learning Rate | Test Accuracy | Test Macro F1 |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | 2026-06-16 14:39 | Optical Recognition of Handwritten Digits | 120 | 300 | 0.02 | 0.7402 | 0.7295 |
+| 2 | 2026-06-16 14:40 | Pen-Based Digits | 120 | 300 | 0.02 | 0.6641 | 0.6117 |
+
+The later runs also kept `experiment.standardize: true` and left `pca_components` unset for these two datasets, so the pipeline stayed as standardization plus direct RBF.
+
+Outputs for the four digit runs were written to `SURF2026/output/rbf_20260616_142139_183542/`, `SURF2026/output/rbf_20260616_142149_344234/`, `SURF2026/output/rbf_20260616_143905_864353/`, and `SURF2026/output/rbf_20260616_144010_476280/`.
 
 ## Notes on Fashion-MNIST
 

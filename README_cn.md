@@ -218,16 +218,39 @@ SURF2026/output/rbf_YYYYMMDD_HHMMSS/
 
 这些结果对应当前 `config.yaml` 的配置，包括各数据集的 RBF 参数和 Fashion-MNIST 的 PCA 管线。
 
-## 数字数据集运行结果
+## 数字数据集运行记录
 
-后面新增的两个数字数据集使用的是标准表格数据流程：分层划分、仅基于训练集拟合的标准化，然后直接进入 RBF 特征层。不使用 PCA。
+这两个数字数据集都走标准表格数据流程：分层划分、仅基于训练集拟合的标准化，然后直接进入 RBF 特征层。不使用 PCA。
 
-| 数据集 | 训练准确率 | 测试准确率 | 训练 Macro F1 | 测试 Macro F1 |
-|---|---:|---:|---:|---:|
-| Optical Recognition of Handwritten Digits | 0.4363 | 0.4228 | 0.3704 | 0.3476 |
-| Pen-Based Digits | 0.5446 | 0.5360 | 0.4224 | 0.4132 |
+最终的两次调参运行按实际执行顺序排列如下：先 `optdigits`，后 `pendigits`。
 
-这次运行的输出目录分别是 `SURF2026/output/rbf_20260616_142139_183542/` 和 `SURF2026/output/rbf_20260616_142149_344234/`。
+### 运行历史
+
+| 时间 | 数据集 | n_centers | Epochs | Learning Rate | 测试准确率 | 测试 Macro F1 |
+|---|---|---:|---:|---:|---:|---:|
+| 2026-06-16 14:21 | Optical Recognition of Handwritten Digits | 20 | 150 | 0.05 | 0.4228 | 0.3476 |
+| 2026-06-16 14:21 | Pen-Based Digits | 20 | 150 | 0.05 | 0.5360 | 0.4132 |
+| 2026-06-16 14:39 | Optical Recognition of Handwritten Digits | 80 | 300 | 0.02 | 0.6698 | 0.6503 |
+| 2026-06-16 14:40 | Pen-Based Digits | 120 | 300 | 0.02 | 0.6641 | 0.6117 |
+
+### 做出的修改
+
+这次主要调整了三项：
+
+- 增加 `rbf.n_centers`，让 RBF 隐层容量更大
+- 提高 `rbf.epochs`，让 softmax 有更充分的收敛时间
+- 降低 `rbf.learning_rate`，让优化更稳定
+
+### 最终运行顺序
+
+| 顺序 | 时间 | 数据集 | n_centers | Epochs | Learning Rate | 测试准确率 | 测试 Macro F1 |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | 2026-06-16 14:39 | Optical Recognition of Handwritten Digits | 120 | 300 | 0.02 | 0.7402 | 0.7295 |
+| 2 | 2026-06-16 14:40 | Pen-Based Digits | 120 | 300 | 0.02 | 0.6641 | 0.6117 |
+
+后面的运行仍然保持 `experiment.standardize: true`，并且没有给这两个数据集设置 `pca_components`，所以流程一直是“标准化 + 直接进 RBF”。
+
+这四次运行的输出目录分别是 `SURF2026/output/rbf_20260616_142139_183542/`、`SURF2026/output/rbf_20260616_142149_344234/`、`SURF2026/output/rbf_20260616_143905_864353/` 和 `SURF2026/output/rbf_20260616_144010_476280/`。
 
 ## Fashion-MNIST 说明
 
