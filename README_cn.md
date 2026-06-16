@@ -199,6 +199,19 @@ SURF2026/output/rbf_YYYYMMDD_HHMMSS/
 
 - `summary.json`
 
+## 当前参考结果
+
+最新一次完整运行保存在 `SURF2026/output/rbf_20260616_132819_188901/`。下面的表格记录了这次运行的主要指标，方便在 README 中保留一个明确的基准快照。
+
+| 数据集 | 训练准确率 | 测试准确率 | 训练 Macro F1 | 测试 Macro F1 |
+|---|---:|---:|---:|---:|
+| Iris | 0.8839 | 0.8421 | 0.8827 | 0.8462 |
+| Wine | 0.9699 | 1.0000 | 0.9714 | 1.0000 |
+| Breast Cancer Wisconsin | 0.8967 | 0.9231 | 0.8842 | 0.9133 |
+| Fashion-MNIST | 0.7085 | 0.7091 | 0.7032 | 0.7035 |
+
+这些结果对应当前 `config.yaml` 的配置，包括各数据集的 RBF 参数和 Fashion-MNIST 的 PCA 管线。
+
 ## Fashion-MNIST 说明
 
 Fashion-MNIST 在进入 RBF 层前使用专门的图像处理管线：

@@ -82,6 +82,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+If you are installing into a shared environment that already contains packages such as `lerobot`, `openvla`, `torchvision`, or `torchaudio`, use a dedicated virtual environment for this project. This repository pins `torch` to `2.2.0` so the PyTorch stack stays compatible with those packages.
+
 ## Configuration
 
 All configurable parameters are in `config.yaml`.
@@ -198,6 +200,19 @@ Each dataset gets:
 The full run also gets:
 
 - `summary.json`
+
+## Current Reference Run
+
+The latest full run was saved under `SURF2026/output/rbf_20260616_132819_188901/`. The table below records the main metrics from that run so the README reflects a concrete benchmark snapshot.
+
+| Dataset | Train Accuracy | Test Accuracy | Train Macro F1 | Test Macro F1 |
+|---|---:|---:|---:|---:|
+| Iris | 0.8839 | 0.8421 | 0.8827 | 0.8462 |
+| Wine | 0.9699 | 1.0000 | 0.9714 | 1.0000 |
+| Breast Cancer Wisconsin | 0.8967 | 0.9231 | 0.8842 | 0.9133 |
+| Fashion-MNIST | 0.7085 | 0.7091 | 0.7032 | 0.7035 |
+
+These results correspond to the current configuration in `config.yaml`, including the dataset-specific RBF settings and the Fashion-MNIST PCA pipeline.
 
 ## Notes on Fashion-MNIST
 
