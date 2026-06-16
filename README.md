@@ -142,6 +142,8 @@ python src\download_datasets.py --dataset iris
 python src\download_datasets.py --dataset wine
 python src\download_datasets.py --dataset breast_cancer
 python src\download_datasets.py --dataset fashion_mnist
+python src\download_datasets.py --dataset optdigits
+python src\download_datasets.py --dataset pendigits
 ```
 
 Fashion-MNIST is fetched from OpenML, so the first download requires internet access.
@@ -158,6 +160,8 @@ Train and evaluate one dataset:
 
 ```powershell
 python src\train_evaluate.py --dataset iris
+python src\train_evaluate.py --dataset optdigits
+python src\train_evaluate.py --dataset pendigits
 ```
 
 GPU/PyTorch entry:
@@ -177,6 +181,8 @@ gpu:
 ```
 
 Feature preparation, PCA, and KMeans center selection still use scikit-learn on CPU. For faster Fashion-MNIST runs, the current config uses random training samples as RBF centers.
+
+For `optdigits` and `pendigits`, the pipeline stays on the tabular path: stratified train/test split, then train-set-fitted standardization, then direct RBF features. No PCA is applied.
 
 Outputs are written to:
 
@@ -213,6 +219,17 @@ The latest full run was saved under `SURF2026/output/rbf_20260616_132819_188901/
 | Fashion-MNIST | 0.7085 | 0.7091 | 0.7032 | 0.7035 |
 
 These results correspond to the current configuration in `config.yaml`, including the dataset-specific RBF settings and the Fashion-MNIST PCA pipeline.
+
+## Digit Dataset Run
+
+The two digit datasets requested later were trained with the standard tabular path only: stratified split, train-set-fitted standardization, then direct RBF features. No PCA was used.
+
+| Dataset | Train Accuracy | Test Accuracy | Train Macro F1 | Test Macro F1 |
+|---|---:|---:|---:|---:|
+| Optical Recognition of Handwritten Digits | 0.4363 | 0.4228 | 0.3704 | 0.3476 |
+| Pen-Based Digits | 0.5446 | 0.5360 | 0.4224 | 0.4132 |
+
+Outputs for this run were written to `SURF2026/output/rbf_20260616_142139_183542/` and `SURF2026/output/rbf_20260616_142149_344234/`.
 
 ## Notes on Fashion-MNIST
 

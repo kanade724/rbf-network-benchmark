@@ -474,7 +474,10 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train and evaluate Gaussian RBF networks.")
     parser.add_argument("--config", type=Path, default=project_root() / "config.yaml")
-    parser.add_argument("--dataset", choices=["iris", "wine", "breast_cancer", "fashion_mnist"])
+    parser.add_argument(
+        "--dataset",
+        choices=["iris", "wine", "breast_cancer", "fashion_mnist", "optdigits", "pendigits"],
+    )
     return parser.parse_args()
 
 

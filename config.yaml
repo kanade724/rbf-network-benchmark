@@ -17,10 +17,12 @@ download:
 
 experiment:
   datasets:
-    - iris
-    - wine
-    - breast_cancer
-    - fashion_mnist
+    #- iris
+    #- wine
+    #- breast_cancer
+    #- fashion_mnist
+    - optdigits
+    - pendigits
   test_size: 0.25 # 25% test set, 75% training set
   random_state: 42 
   standardize: true
@@ -84,3 +86,19 @@ dataset_overrides:
       epochs: 400
       learning_rate: 0.02
       l2_alpha: 0.00001
+
+  optdigits:
+    rbf:
+      n_centers: 120
+      epochs: 300
+      learning_rate: 0.02
+      sigma_scale: 0.8
+      l2_alpha: 0.001
+
+  pendigits:
+    rbf:
+      n_centers: 120
+      epochs: 300
+      learning_rate: 0.02
+      sigma_scale: 0.8
+      l2_alpha: 0.001

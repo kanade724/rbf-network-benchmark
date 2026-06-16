@@ -140,6 +140,8 @@ python src\download_datasets.py --dataset iris
 python src\download_datasets.py --dataset wine
 python src\download_datasets.py --dataset breast_cancer
 python src\download_datasets.py --dataset fashion_mnist
+python src\download_datasets.py --dataset optdigits
+python src\download_datasets.py --dataset pendigits
 ```
 
 Fashion-MNIST 从 OpenML 获取，因此第一次下载需要网络连接。
@@ -156,6 +158,8 @@ python src\train_evaluate.py
 
 ```powershell
 python src\train_evaluate.py --dataset iris
+python src\train_evaluate.py --dataset optdigits
+python src\train_evaluate.py --dataset pendigits
 ```
 
 GPU/PyTorch 入口：
@@ -175,6 +179,8 @@ gpu:
 ```
 
 特征准备、PCA 和 KMeans 中心选择仍然使用 scikit-learn 在 CPU 上完成。为了让 Fashion-MNIST 训练更快，当前配置使用随机训练样本作为 RBF centers。
+
+对于 `optdigits` 和 `pendigits`，处理流程保持在表格数据路径上：分层划分训练/测试集，然后只做基于训练集拟合的标准化，之后直接进入 RBF 特征层。不使用 PCA。
 
 输出会写入：
 
@@ -211,6 +217,17 @@ SURF2026/output/rbf_YYYYMMDD_HHMMSS/
 | Fashion-MNIST | 0.7085 | 0.7091 | 0.7032 | 0.7035 |
 
 这些结果对应当前 `config.yaml` 的配置，包括各数据集的 RBF 参数和 Fashion-MNIST 的 PCA 管线。
+
+## 数字数据集运行结果
+
+后面新增的两个数字数据集使用的是标准表格数据流程：分层划分、仅基于训练集拟合的标准化，然后直接进入 RBF 特征层。不使用 PCA。
+
+| 数据集 | 训练准确率 | 测试准确率 | 训练 Macro F1 | 测试 Macro F1 |
+|---|---:|---:|---:|---:|
+| Optical Recognition of Handwritten Digits | 0.4363 | 0.4228 | 0.3704 | 0.3476 |
+| Pen-Based Digits | 0.5446 | 0.5360 | 0.4224 | 0.4132 |
+
+这次运行的输出目录分别是 `SURF2026/output/rbf_20260616_142139_183542/` 和 `SURF2026/output/rbf_20260616_142149_344234/`。
 
 ## Fashion-MNIST 说明
 
