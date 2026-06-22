@@ -47,6 +47,7 @@ rbf:
   epochs: 150
   learning_rate: 0.05
   l2_alpha: 0.001
+  solver: gd
   kmeans_max_iter: 300
 
 dataset_overrides:
@@ -89,16 +90,18 @@ dataset_overrides:
 
   optdigits:
     rbf:
-      n_centers: 120
-      epochs: 300
+      n_centers: 20
+      epochs: 2000
       learning_rate: 0.02
       sigma_scale: 0.8
-      l2_alpha: 0.001
+      l2_alpha: 0.01
+      solver: lbfgs
 
   pendigits:
     rbf:
-      n_centers: 120
-      epochs: 300
+      n_centers: 20
+      epochs: 2000
       learning_rate: 0.02
-      sigma_scale: 0.8
-      l2_alpha: 0.001
+      sigma_scale: 0.6
+      l2_alpha: 0.01
+      solver: lbfgs

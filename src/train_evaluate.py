@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
@@ -36,6 +37,7 @@ class RBFNetwork:
     epochs: int
     learning_rate: float
     l2_alpha: float
+    solver: str
     random_state: int
     kmeans_max_iter: int
 
@@ -58,7 +60,12 @@ class RBFNetwork:
 
         phi = self._gaussian_rbf_features(x)
         phi_eval = self._gaussian_rbf_features(x_eval) if x_eval is not None else None
-        self.history_ = self._fit_softmax_gd(phi, y, phi_eval, y_eval, progress_label)
+        if self.solver == "gd":
+            self.history_ = self._fit_softmax_gd(phi, y, phi_eval, y_eval, progress_label)
+        elif self.solver == "lbfgs":
+            self.history_ = self._fit_logistic_regression(phi, y, phi_eval, y_eval)
+        else:
+            raise ValueError("rbf.solver must be 'gd' or 'lbfgs'.")
         return self
 
     def predict(self, x: np.ndarray) -> np.ndarray:
@@ -107,6 +114,41 @@ class RBFNetwork:
                 train_acc=f"{row['train_accuracy']:.4f}",
             )
         return history
+
+    def _fit_logistic_regression(
+        self,
+        phi: np.ndarray,
+        y: np.ndarray,
+        phi_eval: np.ndarray | None,
+        y_eval: np.ndarray | None,
+    ) -> list[dict[str, float]]:
+        if self.epochs <= 0:
+            raise ValueError("rbf.epochs must be positive.")
+        if self.l2_alpha <= 0:
+            raise ValueError("rbf.l2_alpha must be positive for lbfgs solver.")
+
+        model = LogisticRegression(
+            max_iter=self.epochs,
+            C=1.0 / self.l2_alpha,
+            solver="lbfgs",
+            fit_intercept=False,
+        )
+        model.fit(phi, y)
+
+        self.classes_ = model.classes_
+        self.weights_ = self._weights_from_logistic_regression(model)
+        return [self._history_row(self.epochs, phi, y, phi_eval, y_eval)]
+
+    def _weights_from_logistic_regression(self, model: LogisticRegression) -> np.ndarray:
+        coef = model.coef_
+
+        if len(model.classes_) == 2 and coef.shape[0] == 1:
+            weights = np.zeros((coef.shape[1], 2), dtype=np.float64)
+            weights[:, 1] = coef[0]
+            return weights
+
+        weights = coef.T.astype(np.float64, copy=False)
+        return weights
 
     def _history_row(
         self,
@@ -244,6 +286,7 @@ def make_model(config: dict[str, Any]) -> RBFNetwork:
         epochs=int(rbf.get("epochs", 100)),
         learning_rate=float(rbf.get("learning_rate", 0.05)),
         l2_alpha=float(rbf.get("l2_alpha", 1e-3)),
+        solver=str(rbf.get("solver", "gd")),
         random_state=int(config["experiment"].get("random_state", 42)),
         kmeans_max_iter=int(rbf.get("kmeans_max_iter", 300)),
     )
@@ -428,6 +471,7 @@ def evaluate_dataset(config: dict[str, Any], dataset: str, run_dir: Path) -> dic
             "n_centers": int(model.n_centers),
             "center_init": model.center_init,
             "output_layer": "softmax",
+            "solver": model.solver,
             "optimizer": "gradient_descent",
             "epochs": int(model.epochs),
             "learning_rate": float(model.learning_rate),
