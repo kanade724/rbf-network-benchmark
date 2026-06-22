@@ -1,0 +1,25 @@
+project:
+  data_dir: data
+  random_state: 42
+
+datasets:
+  iris:
+    standardize: true
+    model: {n_centers: 20, gamma: 0.1, lr: 0.01, epochs: 500, reg: 0.0001, print_every: 20}
+  wine:
+    standardize: true
+    model: {n_centers: 20, gamma: null, lr: 0.01, epochs: 500, reg: 0.001, print_every: 20}
+  breast_cancer:
+    standardize: true
+    model: {n_centers: 20, gamma: 0.1, lr: 0.01, epochs: 500, reg: 0.0001, print_every: 20}
+  digits:
+    standardize: true
+    model: {n_centers: 20, gamma: null, lr: 0.03, epochs: 500, reg: 0.0001, print_every: 20}
+  pendigits:
+    standardize: true
+    model: {n_centers: 20, gamma: null, lr: 0.03, epochs: 500, reg: 0.0001, print_every: 20}
+  fashion_mnist:
+    train_size: 10000
+    standardize: true
+    pca_components: 30
+    model: {n_centers: 20, gamma: null, lr: 0.01, epochs: 500, reg: 0.0001, print_every: 20}
