@@ -7,6 +7,7 @@ from pathlib import Path
 
 from rbf_benchmark.config import project_root, read_config, workspace_path
 from rbf_benchmark.training import run_dataset
+from tqdm import tqdm
 
 
 def main() -> None:
@@ -15,7 +16,7 @@ def main() -> None:
     args = parser.parse_args()
     config = read_config(args.config)
     run_dir = workspace_path(config, "output_dir") / datetime.now().strftime("rbf_ridge_%Y%m%d_%H%M%S_%f")
-    results = [run_dataset(name, config, run_dir) for name in config["experiment"]["datasets"]]
+    results = [run_dataset(name, config, run_dir) for name in tqdm(config["experiment"]["datasets"], desc="Training all datasets", unit="dataset", leave=False)]
     (run_dir / "summary.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
 
 

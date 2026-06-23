@@ -2,6 +2,7 @@ paths:
   # This repository currently lives at SURF2026/src/rbf-network-benchmark.
   # ../.. resolves to the SURF2026 workspace root, where data and output live.
   workspace_root: ../..
+  download_dir: download
   data_dir: data
   output_dir: output
 
@@ -36,6 +37,9 @@ experiment:
   fashion_mnist_pipeline:
     normalize_pixels: true
     pca_components: 100
+  hardware_quantization:
+    # RBF inputs are restricted to this many normalized hardware states.
+    levels: 200
 
 runtime:
   # auto selects CUDA when available, otherwise CPU. Set explicitly to cpu or cuda when required.

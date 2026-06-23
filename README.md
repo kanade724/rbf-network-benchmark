@@ -10,7 +10,7 @@ python src\train_dataset.py --dataset iris
 python src\train_all.py
 ```
 
-The download program performs the complete pre-RBF pipeline: stratified split, Fashion-MNIST pixel normalization, train-fitted standardization, and Fashion-MNIST PCA. It writes `data/<dataset>_train.csv` and `data/<dataset>_test.csv`; the final `label` column is the class target. Training uses those CSV files directly.
+The download program first stores raw data in `download/<dataset>/raw.npz`. When that cache exists, it never contacts the source again. It then performs the complete pre-RBF pipeline: stratified split, Fashion-MNIST pixel normalization, train-fitted standardization, Fashion-MNIST PCA, then per-feature train-fitted min-max mapping and quantization to 200 hardware states. Each processed dataset is stored independently in `data/<dataset>/`: `train.csv`, `test.csv`, `differential_levels.csv` (the 200-entry hardware state table), and `metadata.json`. The final `label` column is the class target. Training uses those CSV files directly.
 
 Dataset wrappers may also be executed directly from `src/dataset_runners/`.
 
