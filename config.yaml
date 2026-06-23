@@ -11,9 +11,16 @@ download:
     - wine
     - breast_cancer
     - fashion_mnist
+    - optical_digits
+    - pen_digits
   fashion_mnist:
-    openml_name: Fashion-MNIST
-    version: 1
+    data_id: 40996
+  optical_digits:
+    # OpenML 28: Optical Recognition of Handwritten Digits
+    data_id: 28
+  pen_digits:
+    # OpenML 32: Pen-Based Recognition of Handwritten Digits
+    data_id: 32
 
 experiment:
   datasets:
@@ -21,30 +28,25 @@ experiment:
     - wine
     - breast_cancer
     - fashion_mnist
+    - optical_digits
+    - pen_digits
   test_size: 0.25 # 25% test set, 75% training set
   random_state: 42 
   standardize: true
   fashion_mnist_pipeline:
     normalize_pixels: true
-    pca_components: 200
-  save_predictions: true
-  save_confusion_matrix: true
-  save_plots: true
+    pca_components: 100
 
-gpu:
+runtime:
+  # auto selects CUDA when available, otherwise CPU. Set explicitly to cpu or cuda when required.
   device: auto
-  batch_size: 2048
-  eval_batch_size: 4096
-  history_interval: 1
 
 rbf:
   center_init: kmeans
   n_centers: 20
   sigma: auto
   sigma_scale: 1.0
-  epochs: 150
-  learning_rate: 0.05
-  l2_alpha: 0.001
+  ridge_alpha: 0.001
   kmeans_max_iter: 300
 
 dataset_overrides:
@@ -53,34 +55,41 @@ dataset_overrides:
       n_centers: 12 #特征维度 输出维度
       sigma: auto
       sigma_scale: 1.0
-      epochs: 150
-      learning_rate: 0.05
-      l2_alpha: 0.001
+      ridge_alpha: 0.001
 
   wine:
     rbf:
       n_centers: 30
       sigma: auto
       sigma_scale: 1.0
-      epochs: 200
-      learning_rate: 0.05
-      l2_alpha: 0.01
+      ridge_alpha: 0.01
 
   breast_cancer:
     rbf:
       n_centers: 40
       sigma: auto
       sigma_scale: 1.2
-      epochs: 200
-      learning_rate: 0.05
-      l2_alpha: 0.01
+      ridge_alpha: 0.01
 
   fashion_mnist:
     rbf:
       center_init: random
-      n_centers: 6000
+      # Ridge regression solves a centers x centers linear system; 1000 is a practical default.
+      n_centers: 1000
       sigma: auto
       sigma_scale: 0.35
-      epochs: 400
-      learning_rate: 0.02
-      l2_alpha: 0.00001
+      ridge_alpha: 0.00001
+
+  optical_digits:
+    rbf:
+      n_centers: 100
+      sigma: auto
+      sigma_scale: 1.0
+      ridge_alpha: 0.001
+
+  pen_digits:
+    rbf:
+      n_centers: 100
+      sigma: auto
+      sigma_scale: 1.0
+      ridge_alpha: 0.001
